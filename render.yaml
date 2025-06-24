@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: bot-vuelos-telegram
+    env: python
+    buildCommand: ""
+    startCommand: python3 bot.py
