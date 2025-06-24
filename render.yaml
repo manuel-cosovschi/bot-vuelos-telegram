@@ -1,8 +1,8 @@
 services:
   - type: web
-    name: bot-vuelos-telegram
-    runtime: python
+    name: vola-barato
+    env: python
     buildCommand: pip install -r requirements.txt
     startCommand: python3 bot.py
-    plan: free
+    autoDeploy: true
 
