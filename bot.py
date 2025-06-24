@@ -1,22 +1,28 @@
-from telegram.ext import ApplicationBuilder, CommandHandler
-from telegram import Update
+from flask import Flask, request
+import telegram
+from telegram.ext import Dispatcher, CommandHandler
 from scraper import scrape_rango
 import os
 from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
-import asyncio
 
 load_dotenv()
+
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-PORT = int(os.environ.get("PORT", 8443))
-WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}/{TOKEN}"
+bot = telegram.Bot(token=TOKEN)
 
-async def start(update: Update, context):
-    await update.message.reply_text("¡Hola! Soy tu bot de vuelos baratos ✈️. Usá /alerta para buscar ofertas.")
+app = Flask(__name__)
 
-async def alerta(update, context):
+# === Configurar dispatcher para manejar comandos ===
+dispatcher = Dispatcher(bot, None, use_context=True)
+
+# === Funciones de comando ===
+def start(update, context):
+    update.message.reply_text("¡Hola! Soy tu bot de vuelos baratos ✈️. Usá /alerta para buscar ofertas.")
+
+def alerta(update, context):
     mensaje = "🔎 Buscando vuelos baratos..."
-    await update.message.reply_text(mensaje)
+    update.message.reply_text(mensaje)
 
     alertas = []
 
@@ -31,30 +37,49 @@ async def alerta(update, context):
         alertas.append(f"🇺🇸 ORLANDO\n{r['ida']} → {r['vuelta']}\n💸 ${r['precio']}\n🔗 {r['url']}")
 
     if alertas:
-        for alerta in alertas:
-            await update.message.reply_text(alerta)
+        for a in alertas:
+            update.message.reply_text(a)
     else:
-        await update.message.reply_text("😕 No se encontraron vuelos baratos por ahora.")
+        update.message.reply_text("😕 No se encontraron vuelos baratos por ahora.")
 
-# === AUTOEJECUCIÓN DIARIA ===
-async def tarea_automatica():
+# === Agregar handlers ===
+dispatcher.add_handler(CommandHandler("start", start))
+dispatcher.add_handler(CommandHandler("alerta", alerta))
+
+# === Webhook endpoint ===
+@app.route(f"/{TOKEN}", methods=["POST"])
+def webhook():
+    update = telegram.Update.de_json(request.get_json(force=True), bot)
+    dispatcher.process_update(update)
+    return "ok"
+
+@app.route("/", methods=["GET"])
+def index():
+    return "Bot activo!"
+
+# === Ejecutar automáticamente todos los días ===
+def tarea_automatica():
     print("🔄 Ejecutando búsqueda automática...")
-    class DummyUpdate:
-        def __init__(self):
-            self.message = type('msg', (object,), {'reply_text': print})
-    await alerta(DummyUpdate(), None)
+    class DummyMessage:
+        def reply_text(self, msg):
+            print("Auto-alerta:", msg)
+
+    dummy = type('dummy', (), {"message": DummyMessage()})()
+    alerta(dummy, None)
 
 scheduler = BackgroundScheduler()
-scheduler.add_job(lambda: asyncio.run(tarea_automatica()), 'interval', hours=24)
+scheduler.add_job(tarea_automatica, 'interval', hours=24)
 scheduler.start()
 
-# Iniciar bot con webhook
-app = ApplicationBuilder().token(TOKEN).build()
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("alerta", alerta))
-print("🤖 Bot corriendo con webhook...")
-app.run_webhook(
-    listen="0.0.0.0",
-    port=PORT,
-    webhook_url=WEBHOOK_URL
-)
+# === Iniciar servidor ===
+if __name__ == "__main__":
+    import requests
+    # Configurar el webhook si no está hecho
+    url = f"https://api.telegram.org/bot{TOKEN}/setWebhook"
+    webhook_url = f"https://{os.environ['RENDER_EXTERNAL_HOSTNAME']}/{TOKEN}"
+    r = requests.get(url, params={"url": webhook_url})
+    print("Webhook set:", r.json())
+
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
+
