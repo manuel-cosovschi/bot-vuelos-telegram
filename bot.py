@@ -8,6 +8,8 @@ import asyncio
 
 load_dotenv()
 TOKEN = os.getenv("TELEGRAM_TOKEN")
+PORT = int(os.environ.get("PORT", 8443))
+WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}/{TOKEN}"
 
 async def start(update: Update, context):
     await update.message.reply_text("¡Hola! Soy tu bot de vuelos baratos ✈️. Usá /alerta para buscar ofertas.")
@@ -40,16 +42,19 @@ async def tarea_automatica():
     class DummyUpdate:
         def __init__(self):
             self.message = type('msg', (object,), {'reply_text': print})
-
     await alerta(DummyUpdate(), None)
 
 scheduler = BackgroundScheduler()
 scheduler.add_job(lambda: asyncio.run(tarea_automatica()), 'interval', hours=24)
 scheduler.start()
 
-# Iniciar bot
+# Iniciar bot con webhook
 app = ApplicationBuilder().token(TOKEN).build()
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("alerta", alerta))
-print("🤖 Bot corriendo...")
-app.run_polling()
+print("🤖 Bot corriendo con webhook...")
+app.run_webhook(
+    listen="0.0.0.0",
+    port=PORT,
+    webhook_url=WEBHOOK_URL
+)
